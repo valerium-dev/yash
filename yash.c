@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <readline/readline.h>
 #include <unistd.h>
 
@@ -8,8 +7,8 @@ char ** tokenizeString(char * string);
 
 int main() {
     int cPID;
-    char * cmd;
-    char ** tokens;
+    char *cmd;
+    char **tokens;
 
     while(1) {
 	cmd = readline("# ");
@@ -17,17 +16,31 @@ int main() {
         cPID = fork();
         if (cPID == 0) {
             execvp(cmd, cmd);
-	}
+	    }
     }
 }
 
 char ** tokenizeString(char * string) {
     char ** tokens = malloc(sizeof(string));
-    char currentChar;
+    char * tokenStart = string;
+    int numCharactersInToken = 0;
 
-    while(currentChar != '\n') {
-        currentChar = *string;
+    while(*string != NULL) {
+        if (*string == ' ') {
+            *string = NULL;
+            string++;
+            *tokens = tokenStart;
+            tokens++;
+            tokenStart = string;
+            numCharactersInToken = 0;
+        } else {
+            string++;
+            numCharactersInToken++;
+            if (*string == NULL) {
+                *tokens = tokenStart;
+            }
+        }
     }
 
-    return tokens;    
+    return tokens;
 }
