@@ -11,17 +11,20 @@ int main() {
     char **tokens;
 
     while(1) {
-	cmd = readline("# ");
-	tokens = tokenizeString(cmd);
-        cPID = fork();
+	    cmd = readline("# ");
+	    tokens = tokenizeString(cmd);
+	    cPID = fork();
         if (cPID == 0) {
-            execvp(cmd, cmd);
-	    }
+            execvp(*tokens, tokens);
+	    } else {
+            waitpid(cPID, NULL, 0);
+        }
     }
 }
 
 char ** tokenizeString(char * string) {
     char ** tokens = malloc(sizeof(string));
+    char ** temp = tokens;
     char * tokenStart = string;
     int numCharactersInToken = 0;
 
@@ -42,5 +45,5 @@ char ** tokenizeString(char * string) {
         }
     }
 
-    return tokens;
+    return temp;
 }
