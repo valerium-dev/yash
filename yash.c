@@ -11,12 +11,12 @@ int main() {
     char **tokens;
 
     while(1) {
-	    cmd = readline("# ");
-	    tokens = tokenizeString(cmd);
-	    cPID = fork();
+        cmd = readline("# ");
+        tokens = tokenizeString(cmd);
+        cPID = fork();
         if (cPID == 0) {
             execvp(*tokens, tokens);
-	    } else {
+        } else {
             waitpid(cPID, NULL, 0);
         }
     }
