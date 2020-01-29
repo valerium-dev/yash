@@ -19,13 +19,14 @@ int main() {
         cPID = fork();
         if (cPID == 0) {
             execvp(*tokens, tokens);
-            perror("Error:");
+            perror("Error");
         } else {
             waitpid(cPID, NULL, WUNTRACED);
         }
     }
 }
 
+// TODO: Return flag instead of pointer. Pass pointer to func.
 char ** tokenizeString(char * string) {
     char ** tokens = malloc(sizeof(string));
     char ** temp = tokens;
@@ -48,6 +49,9 @@ char ** tokenizeString(char * string) {
             }
         }
     }
+
+    *tokens++;
+    *tokens = NULL;
 
     return temp;
 }
