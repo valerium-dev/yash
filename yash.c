@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <readline/readline.h>
 #include <unistd.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 char ** tokenizeString(char * string);
 
@@ -16,8 +19,9 @@ int main() {
         cPID = fork();
         if (cPID == 0) {
             execvp(*tokens, tokens);
+            perror("Error:");
         } else {
-            waitpid(cPID, NULL, 0);
+            waitpid(cPID, NULL, WUNTRACED);
         }
     }
 }
