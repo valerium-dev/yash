@@ -3,6 +3,14 @@
 #include <readline/readline.h>
 #include <unistd.h>
 
+enum redirOpts{input, output, error, inout, none};
+
+struct RCommand{
+    char ** command1;
+    char ** command2;
+    int redirect;
+};
+
 char ** tokenizeString(char * string);
 
 int main() {
@@ -47,3 +55,5 @@ char ** tokenizeString(char * string) {
 
     return temp;
 }
+
+
