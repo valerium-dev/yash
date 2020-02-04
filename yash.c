@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <readline/readline.h>
 #include <unistd.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 enum redirOpts{input, output, error, inout, none};
 
@@ -24,12 +27,14 @@ int main() {
         cPID = fork();
         if (cPID == 0) {
             execvp(*tokens, tokens);
+            perror("Error");
         } else {
-            waitpid(cPID, NULL, 0);
+            waitpid(cPID, NULL, WUNTRACED);
         }
     }
 }
 
+// TODO: Return flag instead of pointer. Pass pointer to func.
 char ** tokenizeString(char * string) {
     char ** tokens = malloc(sizeof(string));
     char ** temp = tokens;
@@ -52,6 +57,9 @@ char ** tokenizeString(char * string) {
             }
         }
     }
+
+    *tokens++;
+    *tokens = NULL;
 
     return temp;
 }
