@@ -35,26 +35,28 @@ void tokenizeString(char* string, char** tokens);
 FCommand* searchTokens(char** tokens);
 void checkRedirects(FCommand* cmd);
 void closeFileDescriptors(FCommand* cmd);
+void copyTokens(char** destination, char** source);
 
 int main() {
     int cPID;
-    char* cmd;
+    char* read;
     char** tokens;
     Job jobs[MAX_JOBS];
 
     while(1) {
-        cmd = readline("# ");
+        read = readline("# ");
         tokens = malloc(sizeof(char)*MAX_CMD_LENGTH);
-        tokenizeString(cmd, tokens);
-        FCommand* fileCmd = searchTokens(tokens); 
-        checkRedirects(fileCmd);
+        tokenizeString(read, tokens);
+        FCommand* cmd = searchTokens(tokens); 
         cPID = fork();
         if (cPID == CHILD) {
-            execvp(*tokens, tokens);
+            checkRedirects(cmd);
+            char** prgm = cmd->command;
+            execvp(*prgm, prgm);
+            perror("Error");
         } else {
             waitpid(cPID, NULL, WUNTRACED);
-            closeFileDescriptors(fileCmd);
-            free(fileCmd);
+            free(cmd);
         }
     }
 }
@@ -88,26 +90,32 @@ void tokenizeString(char* string, char** tokens) {
 
 FCommand* searchTokens (char** tokens) {
     FCommand* cmd = malloc(sizeof(char)*MAX_CMD_LENGTH + sizeof(int)*MAX_REDIR_TYPES);
-    char** temp = tokens; 
+    cmd->outFile = 1;
+    cmd->inFile = 0;
+    cmd->errFile = 2;
+    char** temp = tokens;
+    int numBeforeRedir = 0; 
     
     while (*temp != NULL) {
         if (strcmp(*temp, ">") == 0) {
-            temp = NULL;
-            temp++;
+            *temp = NULL;
+            copyTokens(cmd->command, tokens);
+            *temp++;
             char* path = *temp;
             cmd->outFile = open(path, O_WRONLY | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
         }
         
-        if (!strcmp(*temp, "<") == 0) {    
+        if (strcmp(*temp, "<") == 0) {    
             // Find file/path token for redir
             // Pass fd to struct to replace stdin
         }
         
-        if (!strcmp(*temp, "2>") == 0) {
+        if (strcmp(*temp, "2>") == 0) {
             // Find file/path token for redir
             // Pass fd to struct to replace stderr
         }
-
+        
+        numBeforeRedir++;
         *temp++;
     }
 
@@ -135,5 +143,13 @@ void closeFileDescriptors(FCommand* cmd) {
     }
     if (cmd->errFile != STDERR_FILENO) {
         close(cmd->errFile);
+    }
+}
+
+void copyTokens(char** destination, char** source) {
+    while (*source != NULL) {
+        strcpy(*destination, *source);
+        *destination++;
+        *source++;
     }
 }
