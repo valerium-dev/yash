@@ -5,25 +5,24 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
-enum redirOpts{input, output, error, inout, none};
-
-struct RCommand{
-    char ** command1;
-    char ** command2;
-    int redirect;
+struct Job {
+    int status;
 };
 
-char ** tokenizeString(char * string);
+void tokenizeString(char * string, char ** tokens);
 
 int main() {
     int cPID;
     char *cmd;
     char **tokens;
+    struct Job jobs[20];
 
     while(1) {
         cmd = readline("# ");
-        tokens = tokenizeString(cmd);
+        tokens = malloc(sizeof(cmd));
+        tokenizeString(cmd, tokens);
         cPID = fork();
         if (cPID == 0) {
             execvp(*tokens, tokens);
@@ -34,9 +33,7 @@ int main() {
     }
 }
 
-// TODO: Return flag instead of pointer. Pass pointer to func.
-char ** tokenizeString(char * string) {
-    char ** tokens = malloc(sizeof(string));
+void tokenizeString(char * string, char ** tokens) {
     char ** temp = tokens;
     char * tokenStart = string;
     int numCharactersInToken = 0;
@@ -60,8 +57,6 @@ char ** tokenizeString(char * string) {
 
     *tokens++;
     *tokens = NULL;
-
-    return temp;
+    tokens = temp;
 }
-
 
