@@ -13,7 +13,6 @@
 #define MAX_REDIR_TYPES 3
 #define MAX_JOBS 20
 #define CHILD 0
-#define S_RALLWU 
 
 typedef enum JobStatus {fg, bg} JobStatus;
 
@@ -32,7 +31,7 @@ typedef struct FCommand {
 } FCommand;
 
 void tokenizeString(char* string, char** tokens);
-FCommand* searchTokens(char** tokens);
+void searchTokens(char** tokens, FCommand* cmd);
 void checkRedirects(FCommand* cmd);
 void closeFileDescriptors(FCommand* cmd);
 void copyTokens(char** destination, char** source);
@@ -45,9 +44,12 @@ int main() {
 
     while(1) {
         read = readline("# ");
-        tokens = malloc(sizeof(char)*MAX_CMD_LENGTH);
+        tokens = malloc(strlen(read) + (MAX_CMD_LENGTH/2));
+        FCommand* cmd = malloc((sizeof(FCommand)));
+        cmd->command = malloc(sizeof(char)*MAX_CMD_LENGTH);
         tokenizeString(read, tokens);
-        FCommand* cmd = searchTokens(tokens); 
+        cmd->command = tokens;
+        searchTokens(tokens, cmd); 
         cPID = fork();
         if (cPID == CHILD) {
             checkRedirects(cmd);
@@ -56,7 +58,9 @@ int main() {
             perror("Error");
         } else {
             waitpid(cPID, NULL, WUNTRACED);
+            free(tokens);
             free(cmd);
+            free(cmd->command);
         }
     }
 }
@@ -88,8 +92,7 @@ void tokenizeString(char* string, char** tokens) {
     tokens = temp;
 }
 
-FCommand* searchTokens (char** tokens) {
-    FCommand* cmd = malloc(sizeof(char)*MAX_CMD_LENGTH + sizeof(int)*MAX_REDIR_TYPES);
+void searchTokens (char** tokens, FCommand* cmd) {
     cmd->outFile = 1;
     cmd->inFile = 0;
     cmd->errFile = 2;
@@ -99,7 +102,6 @@ FCommand* searchTokens (char** tokens) {
     while (*temp != NULL) {
         if (strcmp(*temp, ">") == 0) {
             *temp = NULL;
-            copyTokens(cmd->command, tokens);
             *temp++;
             char* path = *temp;
             cmd->outFile = open(path, O_WRONLY | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
@@ -118,8 +120,6 @@ FCommand* searchTokens (char** tokens) {
         numBeforeRedir++;
         *temp++;
     }
-
-    return cmd;
 }
 
 void checkRedirects(FCommand* cmd) {
@@ -146,10 +146,3 @@ void closeFileDescriptors(FCommand* cmd) {
     }
 }
 
-void copyTokens(char** destination, char** source) {
-    while (*source != NULL) {
-        strcpy(*destination, *source);
-        *destination++;
-        *source++;
-    }
-}
