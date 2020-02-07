@@ -46,7 +46,6 @@ int main() {
         read = readline("# ");
         tokens = malloc(strlen(read) + (MAX_CMD_LENGTH/2));
         FCommand* cmd = malloc((sizeof(FCommand)));
-        cmd->command = malloc(sizeof(char)*MAX_CMD_LENGTH);
         tokenizeString(read, tokens);
         cmd->command = tokens;
         searchTokens(tokens, cmd); 
@@ -60,7 +59,6 @@ int main() {
             waitpid(cPID, NULL, WUNTRACED);
             free(tokens);
             free(cmd);
-            free(cmd->command);
         }
     }
 }
