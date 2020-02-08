@@ -26,6 +26,7 @@ typedef struct Job {
 void tokenizeString(char* string, char** tokens);
 char** prepareRedirCommand(char** tokens, int* fileErr);
 void signalHandler(int signo);
+void resetStdFD(int in, int out, int err);
 
 int main() {
     int pipefd[2];
@@ -53,21 +54,26 @@ int main() {
         if (command2 != NULL) {
             pipe(pipefd);
             pid = fork();
-            if (pid == CHILD) {
+            if (pid == CHILD && fileErr != NOFILE) {
                 close(pipefd[0]);
-                dup2(pipefd[1], STDOUT_FILENO);
+                if (stdout_cp == STDOUT_FILENO)
+                    dup2(pipefd[1], STDOUT_FILENO);
                 execvp(*command, command);
             } 
-
-            prepareRedirCommand(command2, &fileErr);
+            
             pid = fork();
-            if (pid == CHILD) {
+            resetStdFD(stdin_cp, stdout_cp, stderr_cp);
+            prepareRedirCommand(command2, &fileErr);
+
+            if (pid == CHILD && fileErr != NOFILE) {
                 close(pipefd[1]);
-                dup2(pipefd[0], STDIN_FILENO);
+                if (stdin_cp == STDIN_FILENO)
+                    dup2(pipefd[0], STDIN_FILENO);
                 execvp(*command2, command2);
             }
             close(pipefd[0]);
             close(pipefd[1]);
+
         } else {
             pid = fork();
             if (pid == CHILD && fileErr != NOFILE) {
@@ -79,13 +85,8 @@ int main() {
         
         free(command);
         free(read);
-
-        if (STDIN_FILENO != stdin_cp)
-        dup2(stdin_cp, STDIN_FILENO);
-        if (STDOUT_FILENO != stdout_cp)
-        dup2(stdout_cp, STDOUT_FILENO);
-        if (STDERR_FILENO != stderr_cp)
-        dup2(stderr_cp, STDERR_FILENO);
+        
+        resetStdFD(stdin_cp, stdout_cp, stderr_cp);
         fileErr = 0;
 
     }
@@ -131,7 +132,7 @@ char** prepareRedirCommand(char** tokens, int* fileErr) {
             *topOfTokens = NULL;
             *topOfTokens++;
             char* path = *topOfTokens;
-            outFile = open(path, O_WRONLY | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+            outFile = open(path, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
             dup2(outFile, STDOUT_FILENO);
         }
         
@@ -145,7 +146,7 @@ char** prepareRedirCommand(char** tokens, int* fileErr) {
                 *fileErr = 0;
             } else {
                 *fileErr = NOFILE;
-                printf("yash: file not found. Aborting...\n");
+                perror("yash");
             }
         }
         
@@ -153,7 +154,7 @@ char** prepareRedirCommand(char** tokens, int* fileErr) {
             *topOfTokens = NULL;
             *topOfTokens++;
             char* path = *topOfTokens;
-            errFile = open(path, O_WRONLY | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+            errFile = open(path, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
             dup2(errFile, STDERR_FILENO);
         }
 
@@ -161,6 +162,7 @@ char** prepareRedirCommand(char** tokens, int* fileErr) {
             *topOfTokens = NULL;
             *topOfTokens++;
             temp = topOfTokens;
+            return temp;
         }
         
         *topOfTokens++;
@@ -173,4 +175,13 @@ void signalHandler(int signo){
     if (signo == SIGINT) {
         
     }
+}
+
+void resetStdFD(int in, int out, int err){
+    if (STDIN_FILENO != in)
+        dup2(in, STDIN_FILENO);
+    if (STDOUT_FILENO != out)
+        dup2(out, STDOUT_FILENO);
+    if (STDERR_FILENO != err)
+        dup2(err, STDERR_FILENO);
 }
