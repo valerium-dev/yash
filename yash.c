@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <string.h>
+#include <signal.h>
 
 #define MAX_CMD_LENGTH 2000
 #define MAX_REDIR_TYPES 3
@@ -21,45 +22,71 @@ typedef struct Job {
     JobStatus status;
 } Job;
 
-typedef enum fileR {outputR, inputR, errR} fileR;
-
-typedef struct FCommand {
-    char** command;
-    int inFile;
-    int outFile;
-    int errFile;
-} FCommand;
-
 void tokenizeString(char* string, char** tokens);
-void searchTokens(char** tokens, FCommand* cmd);
-void checkRedirects(FCommand* cmd);
-void closeFileDescriptors(FCommand* cmd);
-void copyTokens(char** destination, char** source);
+char** prepareRedirCommand(char** tokens);
+void signalHandler(int signo);
 
 int main() {
-    int cPID;
+    int pipefd[2], status;
+    pid_t pid;
     char* read;
-    char** tokens;
+    char** command; char** command2;
     Job jobs[MAX_JOBS];
 
     while(1) {
+        int stdin_cp = dup(STDIN_FILENO);
+        int stdout_cp = dup(STDOUT_FILENO);
+        int stderr_cp = dup(STDERR_FILENO);
+
         read = readline("# ");
-        tokens = malloc(strlen(read) + (MAX_CMD_LENGTH/2));
-        FCommand* cmd = malloc((sizeof(FCommand)));
-        tokenizeString(read, tokens);
-        cmd->command = tokens;
-        searchTokens(tokens, cmd); 
-        cPID = fork();
-        if (cPID == CHILD) {
-            checkRedirects(cmd);
-            char** prgm = cmd->command;
-            execvp(*prgm, prgm);
-            perror("Error");
-        } else {
-            waitpid(cPID, NULL, WUNTRACED);
-            free(tokens);
-            free(cmd);
+        if (read == NULL) {
+            if (pid != 0) {
+                printf("Exiting yash...\n");
+                exit(0);
+            }
         }
+        
+        command = malloc(strlen(read) + MAX_CMD_LENGTH/4);
+        tokenizeString(read, command);
+        command2 = prepareRedirCommand(command);
+
+        if (command2 != NULL) {
+            pipe(pipefd);
+            pid = fork();
+            if (pid == CHILD) {
+                close(pipefd[0]);
+                dup2(pipefd[1], STDOUT_FILENO);
+                execvp(*command, command);
+            } 
+
+            prepareRedirCommand(command2);
+            pid = fork();
+            if (pid == CHILD) {
+                close(pipefd[1]);
+                dup2(pipefd[0], STDIN_FILENO);
+                execvp(*command2, command2);
+            }
+            close(pipefd[0]);
+            close(pipefd[1]);
+        } else {
+            pid = fork();
+            if (pid == CHILD) {
+                execvp(*command, command);
+            }
+        }   
+                
+        waitpid(pid, &status, WUNTRACED);
+        
+        free(command);
+        free(read);
+
+        if (STDIN_FILENO != stdin_cp)
+        dup2(stdin_cp, STDIN_FILENO);
+        if (STDOUT_FILENO != stdout_cp)
+        dup2(stdout_cp, STDOUT_FILENO);
+        if (STDERR_FILENO != stderr_cp)
+        dup2(stderr_cp, STDERR_FILENO);
+
     }
 }
 
@@ -90,57 +117,55 @@ void tokenizeString(char* string, char** tokens) {
     tokens = temp;
 }
 
-void searchTokens (char** tokens, FCommand* cmd) {
-    cmd->outFile = 1;
-    cmd->inFile = 0;
-    cmd->errFile = 2;
-    char** temp = tokens;
-    int numBeforeRedir = 0; 
-    
-    while (*temp != NULL) {
-        if (strcmp(*temp, ">") == 0) {
-            *temp = NULL;
-            *temp++;
-            char* path = *temp;
-            cmd->outFile = open(path, O_WRONLY | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+char** prepareRedirCommand(char** tokens) {
+    int outFile;
+    int inFile;
+    int errFile;
+
+    char** topOfTokens = tokens;
+    char** temp = NULL;
+
+    while (*topOfTokens != NULL) {
+        if (strcmp(*topOfTokens, ">") == 0) {
+            *topOfTokens = NULL;
+            *topOfTokens++;
+            char* path = *topOfTokens;
+            outFile = open(path, O_WRONLY | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+            dup2(outFile, STDOUT_FILENO);
         }
         
-        if (strcmp(*temp, "<") == 0) {    
-            // Find file/path token for redir
-            // Pass fd to struct to replace stdin
+        if (strcmp(*topOfTokens, "<") == 0) {    
+            *topOfTokens = NULL;
+            *topOfTokens++;
+            char* path = *topOfTokens;
+            inFile = open(path, O_RDONLY);
+            if (inFile != -1) {
+                dup2(inFile, STDIN_FILENO);
+            }
         }
         
-        if (strcmp(*temp, "2>") == 0) {
-            // Find file/path token for redir
-            // Pass fd to struct to replace stderr
+        if (strcmp(*topOfTokens, "2>") == 0) {
+            *topOfTokens = NULL;
+            *topOfTokens++;
+            char* path = *topOfTokens;
+            errFile = open(path, O_WRONLY | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+            dup2(errFile, STDERR_FILENO);
+        }
+
+        if (strcmp(*topOfTokens, "|") == 0) {
+            *topOfTokens = NULL;
+            *topOfTokens++;
+            temp = topOfTokens;
         }
         
-        numBeforeRedir++;
-        *temp++;
+        *topOfTokens++;
     }
+
+    return temp;
 }
 
-void checkRedirects(FCommand* cmd) {
-    if (cmd->outFile != STDOUT_FILENO) {
-        dup2(cmd->outFile, STDOUT_FILENO);
-    }
-    if (cmd->inFile != STDIN_FILENO) {
-        dup2(cmd->inFile, STDIN_FILENO);
-    }
-    if (cmd->errFile != STDERR_FILENO) {
-        dup2(cmd->errFile, STDERR_FILENO);
+void signalHandler(int signo){
+    if (signo == SIGINT) {
+        
     }
 }
-
-void closeFileDescriptors(FCommand* cmd) {
-    if (cmd->outFile != STDOUT_FILENO) {
-       close(cmd->outFile); 
-    }
-    if (cmd->inFile != STDIN_FILENO) {
-        close(cmd->inFile);
-    }
-    if (cmd->errFile != STDERR_FILENO) {
-        close(cmd->errFile);
-    }
-}
-
