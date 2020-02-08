@@ -14,6 +14,7 @@
 #define MAX_REDIR_TYPES 3
 #define MAX_JOBS 20
 #define CHILD 0
+#define NOFILE -2
 
 typedef enum JobStatus {fg, bg} JobStatus;
 
@@ -23,11 +24,12 @@ typedef struct Job {
 } Job;
 
 void tokenizeString(char* string, char** tokens);
-char** prepareRedirCommand(char** tokens);
+char** prepareRedirCommand(char** tokens, int* fileErr);
 void signalHandler(int signo);
 
 int main() {
-    int pipefd[2], status;
+    int pipefd[2];
+    int status, fileErr=0;
     pid_t pid;
     char* read;
     char** command; char** command2;
@@ -40,15 +42,13 @@ int main() {
 
         read = readline("# ");
         if (read == NULL) {
-            if (pid != 0) {
-                printf("Exiting yash...\n");
-                exit(0);
-            }
+            printf("Exiting yash...\n");
+            exit(0);
         }
         
         command = malloc(strlen(read) + MAX_CMD_LENGTH/4);
         tokenizeString(read, command);
-        command2 = prepareRedirCommand(command);
+        command2 = prepareRedirCommand(command, &fileErr);
 
         if (command2 != NULL) {
             pipe(pipefd);
@@ -59,7 +59,7 @@ int main() {
                 execvp(*command, command);
             } 
 
-            prepareRedirCommand(command2);
+            prepareRedirCommand(command2, &fileErr);
             pid = fork();
             if (pid == CHILD) {
                 close(pipefd[1]);
@@ -70,7 +70,7 @@ int main() {
             close(pipefd[1]);
         } else {
             pid = fork();
-            if (pid == CHILD) {
+            if (pid == CHILD && fileErr != NOFILE) {
                 execvp(*command, command);
             }
         }   
@@ -86,6 +86,7 @@ int main() {
         dup2(stdout_cp, STDOUT_FILENO);
         if (STDERR_FILENO != stderr_cp)
         dup2(stderr_cp, STDERR_FILENO);
+        fileErr = 0;
 
     }
 }
@@ -117,7 +118,7 @@ void tokenizeString(char* string, char** tokens) {
     tokens = temp;
 }
 
-char** prepareRedirCommand(char** tokens) {
+char** prepareRedirCommand(char** tokens, int* fileErr) {
     int outFile;
     int inFile;
     int errFile;
@@ -141,6 +142,10 @@ char** prepareRedirCommand(char** tokens) {
             inFile = open(path, O_RDONLY);
             if (inFile != -1) {
                 dup2(inFile, STDIN_FILENO);
+                *fileErr = 0;
+            } else {
+                *fileErr = NOFILE;
+                printf("yash: file not found. Aborting...\n");
             }
         }
         
