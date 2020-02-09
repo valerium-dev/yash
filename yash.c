@@ -62,6 +62,7 @@ int main() {
                 prepareRedirCommand(command, &fileErr);
                 if (fileErr != NOFILE)
                     execvp(*command, command);
+                exit(0);
             } 
             
             pid = fork();
@@ -72,6 +73,7 @@ int main() {
                 prepareRedirCommand(command2, &fileErr);
                 if (fileErr != NOFILE)
                     execvp(*command2, command2);
+                exit(0);
             }
             close(pipefd[0]);
             close(pipefd[1]);
@@ -90,6 +92,7 @@ int main() {
                 prepareRedirCommand(command, &fileErr);
                 if (fileErr != NOFILE)
                     execvp(*command, command);
+                exit(0);
             }
             waitpid(pid, &status, WUNTRACED);
             
@@ -99,8 +102,6 @@ int main() {
             free(command);
             free(read);
         }
-
-        resetStdFD(stdin_cp, stdout_cp, stderr_cp);
     }
 }
 
