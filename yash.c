@@ -38,6 +38,8 @@ int main() {
     Job jobs[MAX_JOBS];
 
     while(1) {
+        signal(SIGINT, SIG_IGN);
+        
         int stdin_cp = dup(STDIN_FILENO);
         int stdout_cp = dup(STDOUT_FILENO);
         int stderr_cp = dup(STDERR_FILENO);
@@ -60,8 +62,10 @@ int main() {
                 close(pipefd[0]);
                 dup2(pipefd[1], STDOUT_FILENO);
                 prepareRedirCommand(command, &fileErr);
-                if (fileErr != NOFILE)
+                if (fileErr != NOFILE) {
+                    signal(SIGINT, SIG_DFL);
                     execvp(*command, command);
+                }
                 exit(0);
             } 
             
@@ -71,8 +75,10 @@ int main() {
                 close(pipefd[1]);
                 dup2(pipefd[0], STDIN_FILENO);
                 prepareRedirCommand(command2, &fileErr);
-                if (fileErr != NOFILE)
+                if (fileErr != NOFILE) {
+                    signal(SIGINT, SIG_DFL);
                     execvp(*command2, command2);
+                }
                 exit(0);
             }
             close(pipefd[0]);
@@ -90,8 +96,10 @@ int main() {
             pid = fork();
             if (pid == CHILD) {
                 prepareRedirCommand(command, &fileErr);
-                if (fileErr != NOFILE)
+                if (fileErr != NOFILE) {
+                    signal(SIGINT, SIG_DFL);
                     execvp(*command, command);
+                }
                 exit(0);
             }
             waitpid(pid, &status, WUNTRACED);
