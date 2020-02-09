@@ -24,6 +24,14 @@ typedef struct processGroup {
     JobStatus status;
 } procGroup;
 
+typedef procGroup ListEntry;
+
+typedef struct ListNode {
+    ListEntry pg;
+    struct ListNode *next;
+    struct ListNode *prev;
+} ListNode;
+
 void tokenizeString(char* string, char** tokens);
 void prepareRedirCommand(char** tokens, int* fileErr);
 void signalHandler(int signo);
@@ -37,16 +45,15 @@ int main() {
     pid_t pid;
     char* read;
     char** command; char** command2;
-    procGroup jobs[MAX_JOBS];
-
+    
+    int stdin_cp = dup(STDIN_FILENO);
+    int stdout_cp = dup(STDOUT_FILENO);
+    int stderr_cp = dup(STDERR_FILENO);
+    
     while(1) {
         signal(SIGINT, SIG_IGN);
         signal(SIGTSTP, SIG_IGN);
         signal(SIGTTOU, SIG_IGN);
-
-        int stdin_cp = dup(STDIN_FILENO);
-        int stdout_cp = dup(STDOUT_FILENO);
-        int stderr_cp = dup(STDERR_FILENO);
 
         read = readline("# ");
         if (read == NULL) {
@@ -76,6 +83,7 @@ int main() {
                 prepareRedirCommand(command, &fileErr);
                 if (fileErr != NOFILE) {
                     signal(SIGINT, SIG_DFL);
+                    signal(SIGTSTP, &signalHandler);
                     execvp(*command, command);
                 }
                 exit(0);
@@ -91,6 +99,7 @@ int main() {
                 prepareRedirCommand(command2, &fileErr);
                 if (fileErr != NOFILE) {
                     signal(SIGINT, SIG_DFL);
+                    signal(SIGTSTP, &signalHandler);
                     execvp(*command2, command2);
                 }
                 exit(0);
@@ -118,6 +127,7 @@ int main() {
                 prepareRedirCommand(command, &fileErr);
                 if (fileErr != NOFILE) {
                     signal(SIGINT, SIG_DFL);
+                    signal(SIGTSTP, &signalHandler);
                     execvp(*command, command);
                 }
                 exit(0);
