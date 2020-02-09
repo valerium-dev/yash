@@ -41,6 +41,7 @@ int main() {
 
     while(1) {
         signal(SIGINT, SIG_IGN);
+        signal(SIGTSTP, SIG_IGN);
         signal(SIGTTOU, SIG_IGN);
 
         int stdin_cp = dup(STDIN_FILENO);
@@ -66,6 +67,7 @@ int main() {
 
             setpgid(pid, group.id);
             group.id = getpgid(pid);
+            tcsetpgrp(0, group.id);
 
             if (pid == CHILD) {
                 resetStdFD(stdin_cp, stdout_cp, stderr_cp);
@@ -99,6 +101,8 @@ int main() {
             waitpid(-1, &status, WUNTRACED);
             waitpid(-1, &status, WUNTRACED);
             
+            tcsetpgrp(0, getpgid(getpid()));
+    
             resetStdFD(stdin_cp, stdout_cp, stderr_cp);
             fileErr = 0;
             
@@ -108,6 +112,7 @@ int main() {
             pid = fork();
             setpgid(pid, group.id);
             group.id = getpgid(pid);
+            tcsetpgrp(0, group.id);
 
             if (pid == CHILD) {
                 prepareRedirCommand(command, &fileErr);
@@ -118,6 +123,8 @@ int main() {
                 exit(0);
             }
             waitpid(pid, &status, WUNTRACED);
+
+            tcsetpgrp(0, getpgid(getpid()));
             
             resetStdFD(stdin_cp, stdout_cp, stderr_cp);
             fileErr = 0;
@@ -226,9 +233,6 @@ JobStatus searchAmper(char** tokens) {
 }
 
 void signalHandler(int signo){
-    if (signo == SIGINT) {
-        
-    }
 }
 
 void resetStdFD(int in, int out, int err){
