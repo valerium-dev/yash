@@ -24,9 +24,10 @@ typedef struct Job {
 } Job;
 
 void tokenizeString(char* string, char** tokens);
-char** prepareRedirCommand(char** tokens, int* fileErr);
+void prepareRedirCommand(char** tokens, int* fileErr);
 void signalHandler(int signo);
 void resetStdFD(int in, int out, int err);
+char** searchPipe(char** tokens);
 
 int main() {
     int pipefd[2];
@@ -43,59 +44,69 @@ int main() {
 
         read = readline("# ");
         if (read == NULL) {
-            printf("Exiting yash...\n");
+            printf("\nExiting yash...\n");
             exit(0);
         }
         
         command = malloc(strlen(read) + MAX_CMD_LENGTH/4);
         tokenizeString(read, command);
-        command2 = prepareRedirCommand(command, &fileErr);
+        command2 = searchPipe(command);
 
         if (command2 != NULL) {
             pipe(pipefd);
             pid = fork();
-            if (pid == CHILD && fileErr != NOFILE) {
+            if (pid == CHILD) {
+                resetStdFD(stdin_cp, stdout_cp, stderr_cp);
                 close(pipefd[0]);
-                if (stdout_cp == STDOUT_FILENO)
-                    dup2(pipefd[1], STDOUT_FILENO);
-                execvp(*command, command);
+                dup2(pipefd[1], STDOUT_FILENO);
+                prepareRedirCommand(command, &fileErr);
+                if (fileErr != NOFILE)
+                    execvp(*command, command);
             } 
             
             pid = fork();
-            resetStdFD(stdin_cp, stdout_cp, stderr_cp);
-            prepareRedirCommand(command2, &fileErr);
-
-            if (pid == CHILD && fileErr != NOFILE) {
+            if (pid == CHILD) {
+                resetStdFD(stdin_cp, stdout_cp, stderr_cp);
                 close(pipefd[1]);
-                if (stdin_cp == STDIN_FILENO)
-                    dup2(pipefd[0], STDIN_FILENO);
-                execvp(*command2, command2);
+                dup2(pipefd[0], STDIN_FILENO);
+                prepareRedirCommand(command2, &fileErr);
+                if (fileErr != NOFILE)
+                    execvp(*command2, command2);
             }
             close(pipefd[0]);
             close(pipefd[1]);
-
+            
+            waitpid(-1, &status, WUNTRACED);
+            waitpid(-1, &status, WUNTRACED);
+            
+            resetStdFD(stdin_cp, stdout_cp, stderr_cp);
+            fileErr = 0;
+            
+            free(command);
+            free(read);
         } else {
             pid = fork();
-            if (pid == CHILD && fileErr != NOFILE) {
-                execvp(*command, command);
+            if (pid == CHILD) {
+                prepareRedirCommand(command, &fileErr);
+                if (fileErr != NOFILE)
+                    execvp(*command, command);
             }
-        }   
-                
-        waitpid(pid, &status, WUNTRACED);
-        
-        free(command);
-        free(read);
-        
-        resetStdFD(stdin_cp, stdout_cp, stderr_cp);
-        fileErr = 0;
+            waitpid(pid, &status, WUNTRACED);
+            
+            resetStdFD(stdin_cp, stdout_cp, stderr_cp);
+            fileErr = 0;
+            
+            free(command);
+            free(read);
+        }
 
+        resetStdFD(stdin_cp, stdout_cp, stderr_cp);
     }
 }
 
 void tokenizeString(char* string, char** tokens) {
     char** temp = tokens;
     char* tokenStart = string;
-    int numCharactersInToken = 0;
 
     while(*string != '\0') {
         if (*string == ' ') {
@@ -104,10 +115,8 @@ void tokenizeString(char* string, char** tokens) {
             *tokens = tokenStart;
             tokens++;
             tokenStart = string;
-            numCharactersInToken = 0;
         } else {
             string++;
-            numCharactersInToken++;
             if (*string == '\0') {
                 *tokens = tokenStart;
             }
@@ -119,13 +128,12 @@ void tokenizeString(char* string, char** tokens) {
     tokens = temp;
 }
 
-char** prepareRedirCommand(char** tokens, int* fileErr) {
+void prepareRedirCommand(char** tokens, int* fileErr) {
     int outFile;
     int inFile;
     int errFile;
 
     char** topOfTokens = tokens;
-    char** temp = NULL;
 
     while (*topOfTokens != NULL) {
         if (strcmp(*topOfTokens, ">") == 0) {
@@ -160,15 +168,25 @@ char** prepareRedirCommand(char** tokens, int* fileErr) {
 
         if (strcmp(*topOfTokens, "|") == 0) {
             *topOfTokens = NULL;
-            *topOfTokens++;
-            temp = topOfTokens;
-            return temp;
+            return;
         }
-        
+
         *topOfTokens++;
     }
+}
 
-    return temp;
+char** searchPipe(char** tokens){
+    char** temp = tokens;
+    while(*temp != NULL) {
+        if (strcmp(*temp, "|") == 0) {
+            *temp = NULL;
+            *temp++;
+            return temp;
+        }
+
+       *temp++;
+    }
+    return NULL;
 }
 
 void signalHandler(int signo){
@@ -178,10 +196,7 @@ void signalHandler(int signo){
 }
 
 void resetStdFD(int in, int out, int err){
-    if (STDIN_FILENO != in)
-        dup2(in, STDIN_FILENO);
-    if (STDOUT_FILENO != out)
-        dup2(out, STDOUT_FILENO);
-    if (STDERR_FILENO != err)
-        dup2(err, STDERR_FILENO);
+    dup2(in, STDIN_FILENO);
+    dup2(out, STDOUT_FILENO);
+    dup2(err, STDERR_FILENO);
 }
