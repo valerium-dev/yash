@@ -18,16 +18,18 @@
 
 typedef enum JobStatus {fg, bg} JobStatus;
 
-typedef struct Job {
-    char* name;
+typedef struct processGroup {
+    pid_t id;
+    char* procs;
     JobStatus status;
-} Job;
+} procGroup;
 
 void tokenizeString(char* string, char** tokens);
 void prepareRedirCommand(char** tokens, int* fileErr);
 void signalHandler(int signo);
 void resetStdFD(int in, int out, int err);
 char** searchPipe(char** tokens);
+JobStatus searchAmper(char** tokens);
 
 int main() {
     int pipefd[2];
@@ -35,11 +37,12 @@ int main() {
     pid_t pid;
     char* read;
     char** command; char** command2;
-    Job jobs[MAX_JOBS];
+    procGroup jobs[MAX_JOBS];
 
     while(1) {
         signal(SIGINT, SIG_IGN);
-        
+        signal(SIGTTOU, SIG_IGN);
+
         int stdin_cp = dup(STDIN_FILENO);
         int stdout_cp = dup(STDOUT_FILENO);
         int stderr_cp = dup(STDERR_FILENO);
@@ -49,14 +52,21 @@ int main() {
             printf("\nExiting yash...\n");
             exit(0);
         }
+        char* promptCP = malloc(strlen(read)+1);
+        strcpy(promptCP, read);
         
         command = malloc(strlen(read) + MAX_CMD_LENGTH/4);
         tokenizeString(read, command);
+        procGroup group = {0, promptCP, searchAmper(command)};
         command2 = searchPipe(command);
-
+        
         if (command2 != NULL) {
             pipe(pipefd);
             pid = fork();
+
+            setpgid(pid, group.id);
+            group.id = getpgid(pid);
+
             if (pid == CHILD) {
                 resetStdFD(stdin_cp, stdout_cp, stderr_cp);
                 close(pipefd[0]);
@@ -70,6 +80,8 @@ int main() {
             } 
             
             pid = fork();
+            setpgid(pid, group.id);
+
             if (pid == CHILD) {
                 resetStdFD(stdin_cp, stdout_cp, stderr_cp);
                 close(pipefd[1]);
@@ -94,6 +106,9 @@ int main() {
             free(read);
         } else {
             pid = fork();
+            setpgid(pid, group.id);
+            group.id = getpgid(pid);
+
             if (pid == CHILD) {
                 prepareRedirCommand(command, &fileErr);
                 if (fileErr != NOFILE) {
@@ -196,6 +211,18 @@ char** searchPipe(char** tokens){
        *temp++;
     }
     return NULL;
+}
+
+JobStatus searchAmper(char** tokens) {
+    char** temp = tokens;
+    while(*temp != NULL) {
+        if (strcmp(*temp, "&") == 0) {
+            *temp = NULL;
+            return bg;
+        }
+        *temp++;
+    }
+    return fg;
 }
 
 void signalHandler(int signo){
