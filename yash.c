@@ -53,11 +53,15 @@ int main() {
     int stdin_cp = dup(STDIN_FILENO);
     int stdout_cp = dup(STDOUT_FILENO);
     int stderr_cp = dup(STDERR_FILENO);
+
+    ListNode* jobs = malloc(sizeof(ListNode));
+    jobs->nodeID = 0;
     
     while(1) {
         signal(SIGINT, SIG_IGN);
         signal(SIGTSTP, SIG_IGN);
         signal(SIGTTOU, SIG_IGN);
+        signal(SIGCHLD, &signalHandler);
 
         read = readline("# ");
         if (read == NULL) {
@@ -72,78 +76,98 @@ int main() {
         procGroup group = {0, promptCP, searchAmper(command)};
         command2 = searchPipe(command);
         
-        if (command2 != NULL) {
-            pipe(pipefd);
-            pid = fork();
+        if (command != NULL) {
+            if (strcmp(*command, "jobs") == 0) {
+                if (jobs->next != NULL) {
+                    printList(jobs);
+                }
+            } else if (command2 != NULL) {
+                pipe(pipefd);
+                pid = fork();
+                
+                setpgid(pid, group.id);
+                group.id = getpgid(pid);
+                tcsetpgrp(0, group.id);
 
-            setpgid(pid, group.id);
-            group.id = getpgid(pid);
-            tcsetpgrp(0, group.id);
+                if (pid == CHILD) {
+                    resetStdFD(stdin_cp, stdout_cp, stderr_cp);
+                    close(pipefd[0]);
+                    dup2(pipefd[1], STDOUT_FILENO);
+                    prepareRedirCommand(command, &fileErr);
+                    if (fileErr != NOFILE) {
+                        signal(SIGINT, SIG_DFL);
+                        signal(SIGTSTP, SIG_DFL);
+                        execvp(*command, command);
+                    }
+                    exit(0);
+                } 
+            
+                pid = fork();
+                setpgid(pid, group.id);
 
-            if (pid == CHILD) {
-                resetStdFD(stdin_cp, stdout_cp, stderr_cp);
+                if (pid == CHILD) {
+                    resetStdFD(stdin_cp, stdout_cp, stderr_cp);
+                    close(pipefd[1]);
+                    dup2(pipefd[0], STDIN_FILENO);
+                    prepareRedirCommand(command2, &fileErr);
+                    if (fileErr != NOFILE) {
+                        signal(SIGINT, SIG_DFL);
+                        signal(SIGTSTP, SIG_DFL);
+                        execvp(*command2, command2);
+                    }
+                    exit(0);
+                }
                 close(pipefd[0]);
-                dup2(pipefd[1], STDOUT_FILENO);
-                prepareRedirCommand(command, &fileErr);
-                if (fileErr != NOFILE) {
-                    signal(SIGINT, SIG_DFL);
-                    signal(SIGTSTP, &signalHandler);
-                    execvp(*command, command);
-                }
-                exit(0);
-            } 
-            
-            pid = fork();
-            setpgid(pid, group.id);
-
-            if (pid == CHILD) {
-                resetStdFD(stdin_cp, stdout_cp, stderr_cp);
                 close(pipefd[1]);
-                dup2(pipefd[0], STDIN_FILENO);
-                prepareRedirCommand(command2, &fileErr);
-                if (fileErr != NOFILE) {
-                    signal(SIGINT, SIG_DFL);
-                    signal(SIGTSTP, &signalHandler);
-                    execvp(*command2, command2);
+            
+                waitpid(-1 * group.id, &status, WUNTRACED);
+             
+                if (WIFSTOPPED(status)) {
+                    if(WSTOPSIG(status) == SIGTSTP) {
+                        group.status = BGSTOP;
+                        addEntry(group, jobs);
+                    } 
                 }
-                exit(0);
-            }
-            close(pipefd[0]);
-            close(pipefd[1]);
-            
-            waitpid(-1*group.id, &status, WUNTRACED);
-            
-            tcsetpgrp(0, getpgid(getpid()));
+
+                tcsetpgrp(0, getpgid(getpid()));
     
-            resetStdFD(stdin_cp, stdout_cp, stderr_cp);
-            fileErr = 0;
+                resetStdFD(stdin_cp, stdout_cp, stderr_cp);
+                fileErr = 0;
             
-            free(command);
-            free(read);
-        } else {
-            pid = fork();
-            setpgid(pid, group.id);
-            group.id = getpgid(pid);
-            tcsetpgrp(0, group.id);
+                free(command);
+                free(read);
+            } else {
+                pid = fork();
+                setpgid(pid, group.id);
+                group.id = getpgid(pid);
+                tcsetpgrp(0, group.id);
 
-            if (pid == CHILD) {
-                prepareRedirCommand(command, &fileErr);
-                if (fileErr != NOFILE) {
-                    signal(SIGINT, SIG_DFL);
-                    signal(SIGTSTP, &signalHandler);
-                    execvp(*command, command);
+                if (pid == CHILD) {
+                    prepareRedirCommand(command, &fileErr);
+                    if (fileErr != NOFILE) {
+                        signal(SIGINT, SIG_DFL);
+                        signal(SIGTSTP, SIG_DFL);
+                        execvp(*command, command);
+                    }
+                    exit(0);
                 }
-                exit(0);
+                waitpid(-1 * group.id, &status, WUNTRACED);
+                
+                if (WIFSTOPPED(status)) {
+                    if(WSTOPSIG(status) == SIGTSTP) {
+                        group.status = BGSTOP;
+                        addEntry(group, jobs);
+                    } 
+                }
+            
+                tcsetpgrp(0, getpgid(getpid()));
+            
+                resetStdFD(stdin_cp, stdout_cp, stderr_cp);
+                fileErr = 0;
+            
+                free(command);
+                free(read);
             }
-            waitpid(-1*group.id, &status, WUNTRACED);
-
-            tcsetpgrp(0, getpgid(getpid()));
-            
-            resetStdFD(stdin_cp, stdout_cp, stderr_cp);
-            fileErr = 0;
-            
-            free(command);
-            free(read);
         }
     }
 }
@@ -246,12 +270,8 @@ JobStatus searchAmper(char** tokens) {
 }
 
 void signalHandler(int signo){
-    if (signo == SIGINT) {
-        printf("Caught SIGINT");
-    } else if (signo == SIGTSTP) {
-        printf("Caught SIGTSTP");
-    } else if (signo == SIGCHLD) {
-        printf("Caught SIGCHLD");
+    if (signo == SIGCHLD) {
+          
     }
 }
 
@@ -314,7 +334,8 @@ void printList(ListNode* list) {
     ListNode* temp = list;
 
     while (temp != NULL) {
-        printf("[%d] %s\n", temp->nodeID, temp->pg.proc);
+        if (temp->nodeID != 0)
+            printf("[%d] %s\n", temp->nodeID, temp->pg.proc);
         temp = temp->next;
     }
 }
