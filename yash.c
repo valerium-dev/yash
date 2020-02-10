@@ -32,9 +32,10 @@ typedef struct ListNode {
     struct ListNode *next;
     struct ListNode *prev;
 } ListNode;
-void addEntry(ListEntry entry, ListNode* list);
+ListNode* addEntry(ListEntry entry, ListNode* list);
 ListNode* removeEntry(ListNode* list, pid_t pid);
 void printList(ListNode* list);
+pid_t findEntry(ListNode* list);
 
 void tokenizeString(char* string, char** tokens);
 void prepareRedirCommand(char** tokens, int* fileErr);
@@ -42,6 +43,8 @@ void signalHandler(int signo);
 void resetStdFD(int in, int out, int err);
 char** searchPipe(char** tokens);
 JobStatus searchAmper(char** tokens);
+
+ListNode* jobs = malloc(sizeof(ListNode));
 
 int main() {
     int pipefd[2];
@@ -54,7 +57,6 @@ int main() {
     int stdout_cp = dup(STDOUT_FILENO);
     int stderr_cp = dup(STDERR_FILENO);
 
-    ListNode* jobs = malloc(sizeof(ListNode));
     jobs->nodeID = 0;
     
     while(1) {
@@ -68,7 +70,7 @@ int main() {
             printf("\nExiting yash...\n");
             exit(0);
         }
-        char* promptCP = malloc(strlen(read)+1);
+        char* promptCP = malloc(strlen(read)+5);
         strcpy(promptCP, read);
         
         command = malloc(strlen(read) + MAX_CMD_LENGTH/4);
@@ -80,6 +82,58 @@ int main() {
             if (strcmp(*command, "jobs") == 0) {
                 if (jobs->next != NULL) {
                     printList(jobs);
+                    // purgeDone
+                }
+            } else if (strcmp(*command, "fg") == 0) {
+                if (jobs->next != NULL) {
+                    ListNode* job = removeEntry(jobs, findEntry(jobs));
+                    printf("%s\n", job->pg.proc);
+                    signal(SIGINT, SIG_DFL);
+                    signal(SIGTSTP, SIG_DFL);
+                    if (job->pg.status == BGSTOP)
+                        kill(-1*job->pg.id, SIGCONT);
+                    tcsetpgrp(0, job->pg.id);
+                    
+                    waitpid(-1 * job->pg.id, &status, WUNTRACED);
+             
+                    if (WIFSTOPPED(status)) {
+                        if(WSTOPSIG(status) == SIGTSTP) {
+                            job->pg.status = BGSTOP;
+                            addEntry(job->pg, jobs);
+                        } 
+                    }
+
+                    tcsetpgrp(0, getpgid(getpid()));
+                    
+                    resetStdFD(stdin_cp, stdout_cp, stderr_cp);
+                    fileErr = 0;
+            
+                    free(command);
+                    free(read);
+                    free(job); 
+                } else {
+                    printf("yash: fg: current: no such job");
+                }
+            } else if (strcmp(*command, "bg") == 0) {
+                if (jobs->next != NULL) {
+                    ListNode* job = removeEntry(jobs, findEntry(jobs));
+                    kill(-1*job->pg.id, SIGCONT);
+                    job->pg.status = BGRUN;
+                    if (strstr(job->pg.proc, " &") == NULL) {
+                        strcat(job->pg.proc, " &");
+                    }
+                    job = addEntry(job->pg, jobs);
+                    printf("[%d]+ %s\n", job->nodeID, job->pg.proc);
+                
+                    tcsetpgrp(0, getpgid(getpid()));
+                    
+                    resetStdFD(stdin_cp, stdout_cp, stderr_cp);
+                    fileErr = 0;
+            
+                    free(command);
+                    free(read);
+                } else { 
+                    printf("yash: bg: current: no such job");
                 }
             } else if (command2 != NULL) {
                 pipe(pipefd);
@@ -281,7 +335,7 @@ void resetStdFD(int in, int out, int err){
     dup2(err, STDERR_FILENO);
 }
 
-void addEntry(ListEntry entry, ListNode* list) {
+ListNode* addEntry(ListEntry entry, ListNode* list) {
     ListNode* temp = list;
     ListNode* prev;
     
@@ -296,6 +350,7 @@ void addEntry(ListEntry entry, ListNode* list) {
     temp->prev = prev;
     temp->pg = entry;
     temp->nodeID = prev->nodeID + 1;
+    return temp;
 }
 
 ListNode* removeEntry(ListNode* list, pid_t pid) {
@@ -340,3 +395,23 @@ void printList(ListNode* list) {
     }
 }
 
+pid_t findEntry(ListNode* list) {
+
+    ListNode* temp = list->next;
+    pid_t pid = temp->pg.id;
+
+    while (temp != NULL) {
+        if (temp->pg.status == BGSTOP || temp->pg.status == BGRUN) {
+            ListNode* temp2 = temp->next;
+            if (temp2 != NULL) {
+                if (temp2->pg.status == DONE) {
+                    pid = temp->pg.id;
+                } 
+            }
+        }
+        
+        temp = temp->next;
+    }
+
+    return pid;
+}
