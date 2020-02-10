@@ -44,8 +44,6 @@ void resetStdFD(int in, int out, int err);
 char** searchPipe(char** tokens);
 JobStatus searchAmper(char** tokens);
 
-ListNode* jobs = malloc(sizeof(ListNode));
-
 int main() {
     int pipefd[2];
     int status, fileErr=0;
@@ -57,6 +55,7 @@ int main() {
     int stdout_cp = dup(STDOUT_FILENO);
     int stderr_cp = dup(STDERR_FILENO);
 
+    ListNode* jobs = malloc(sizeof(ListNode));
     jobs->nodeID = 0;
     
     while(1) {
@@ -78,7 +77,7 @@ int main() {
         procGroup group = {0, promptCP, searchAmper(command)};
         command2 = searchPipe(command);
         
-        if (command != NULL) {
+        if (*command != NULL) {
             if (strcmp(*command, "jobs") == 0) {
                 if (jobs->next != NULL) {
                     printList(jobs);
