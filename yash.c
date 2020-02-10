@@ -20,7 +20,7 @@ typedef enum JobStatus {FG, BGSTOP, BGRUN, DONE} JobStatus;
 
 typedef struct processGroup {
     pid_t id;
-    char* procs;
+    char* proc;
     JobStatus status;
 } procGroup;
 
@@ -32,6 +32,9 @@ typedef struct ListNode {
     struct ListNode *next;
     struct ListNode *prev;
 } ListNode;
+void addEntry(ListEntry entry, ListNode* list);
+ListNode* removeEntry(ListNode* list, pid_t pid);
+void printList(ListNode* list);
 
 void tokenizeString(char* string, char** tokens);
 void prepareRedirCommand(char** tokens, int* fileErr);
@@ -243,6 +246,13 @@ JobStatus searchAmper(char** tokens) {
 }
 
 void signalHandler(int signo){
+    if (signo == SIGINT) {
+        printf("Caught SIGINT");
+    } else if (signo == SIGTSTP) {
+        printf("Caught SIGTSTP");
+    } else if (signo == SIGCHLD) {
+        printf("Caught SIGCHLD");
+    }
 }
 
 void resetStdFD(int in, int out, int err){
@@ -268,18 +278,44 @@ void addEntry(ListEntry entry, ListNode* list) {
     temp->nodeID = prev->nodeID + 1;
 }
 
-ListNode* removeEntry(ListNode* list) {
+ListNode* removeEntry(ListNode* list, pid_t pid) {
     ListNode* temp = list;
     ListNode* prev;
-    
-    while (temp->next != NULL) {
+    // Check job list isn't empty
+    if (temp->nodeID == 0) {
+        if (temp->next == NULL) {
+            return NULL;
+        }
         temp = temp->next;
     }
 
-    prev = temp->prev;
-    prev->next = NULL;
-    temp->prev = NULL;
+    // Check that element exists
+    while (temp->pg.id != pid) {
+        if (temp->next == NULL) {
+            return NULL;
+        }
+        temp = temp->next;
+    }
 
-    return temp;
+    // Element exists
+    prev = temp->prev;
+    if (prev->nodeID == 0) {
+        prev->next = NULL;
+        temp->prev = NULL;
+        return temp;
+    } else {
+        prev->next = temp->next;
+        temp->prev = NULL;
+        return temp;
+    }
+}
+
+void printList(ListNode* list) {
+    ListNode* temp = list;
+
+    while (temp != NULL) {
+        printf("[%d] %s\n", temp->nodeID, temp->pg.proc);
+        temp = temp->next;
+    }
 }
 
