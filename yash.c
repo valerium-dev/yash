@@ -16,7 +16,7 @@
 #define CHILD 0
 #define NOFILE -2
 
-typedef enum JobStatus {fg, bg} JobStatus;
+typedef enum JobStatus {FG, BGSTOP, BGRUN, DONE} JobStatus;
 
 typedef struct processGroup {
     pid_t id;
@@ -27,6 +27,7 @@ typedef struct processGroup {
 typedef procGroup ListEntry;
 
 typedef struct ListNode {
+    int nodeID;
     ListEntry pg;
     struct ListNode *next;
     struct ListNode *prev;
@@ -107,8 +108,7 @@ int main() {
             close(pipefd[0]);
             close(pipefd[1]);
             
-            waitpid(-1, &status, WUNTRACED);
-            waitpid(-1, &status, WUNTRACED);
+            waitpid(-1*group.id, &status, WUNTRACED);
             
             tcsetpgrp(0, getpgid(getpid()));
     
@@ -132,7 +132,7 @@ int main() {
                 }
                 exit(0);
             }
-            waitpid(pid, &status, WUNTRACED);
+            waitpid(-1*group.id, &status, WUNTRACED);
 
             tcsetpgrp(0, getpgid(getpid()));
             
@@ -235,11 +235,11 @@ JobStatus searchAmper(char** tokens) {
     while(*temp != NULL) {
         if (strcmp(*temp, "&") == 0) {
             *temp = NULL;
-            return bg;
+            return BGRUN;
         }
         *temp++;
     }
-    return fg;
+    return FG;
 }
 
 void signalHandler(int signo){
@@ -250,3 +250,36 @@ void resetStdFD(int in, int out, int err){
     dup2(out, STDOUT_FILENO);
     dup2(err, STDERR_FILENO);
 }
+
+void addEntry(ListEntry entry, ListNode* list) {
+    ListNode* temp = list;
+    ListNode* prev;
+    
+    while (temp->next != NULL) {
+        temp = temp->next;
+    }
+
+    prev = temp;
+    temp->next = malloc(sizeof(ListNode));
+    temp = temp->next;
+    temp->next = NULL;
+    temp->prev = prev;
+    temp->pg = entry;
+    temp->nodeID = prev->nodeID + 1;
+}
+
+ListNode* removeEntry(ListNode* list) {
+    ListNode* temp = list;
+    ListNode* prev;
+    
+    while (temp->next != NULL) {
+        temp = temp->next;
+    }
+
+    prev = temp->prev;
+    prev->next = NULL;
+    temp->prev = NULL;
+
+    return temp;
+}
+
