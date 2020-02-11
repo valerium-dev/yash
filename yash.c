@@ -35,7 +35,8 @@ typedef struct ListNode {
 ListNode* addEntry(ListEntry entry, ListNode* list);
 ListNode* removeEntry(ListNode* list, pid_t pid);
 void printList(ListNode* list);
-pid_t findEntry(ListNode* list);
+pid_t findFGEntry(ListNode* list);
+ListNode* findBGEntry(ListNode* list);
 
 void tokenizeString(char* string, char** tokens);
 void prepareRedirCommand(char** tokens, int* fileErr);
@@ -74,12 +75,13 @@ int main() {
             cleanMemory(jobs);
             exit(0);
         }
-        char* promptCP = malloc(strlen(read)+5);
+
+        char* promptCP = malloc(strlen(read) + 5);
         strcpy(promptCP, read);
-        
+        procGroup group = {0, promptCP, searchAmper(promptCP)};
+
         command = malloc(strlen(read) + MAX_CMD_LENGTH/4);
         tokenizeString(read, command);
-        procGroup group = {0, promptCP, searchAmper(promptCP)};
         command2 = searchPipe(command);
         
         if (*command != NULL) {
@@ -91,7 +93,7 @@ int main() {
             } else if (strcmp(*command, "fg") == 0) {
                 if (jobs->next != NULL) {
                     // purgeDone
-                    ListNode* job = removeEntry(jobs, findEntry(jobs));
+                    ListNode* job = removeEntry(jobs, findFGEntry(jobs));
                     signal(SIGINT, SIG_DFL);
                     signal(SIGTSTP, SIG_DFL);
 
@@ -143,13 +145,12 @@ int main() {
                 }
             } else if (strcmp(*command, "bg") == 0) {
                 if (jobs->next != NULL) {
-                    ListNode* job = removeEntry(jobs, findEntry(jobs));
+                    ListNode* job = findBGEntry(jobs);
                     kill(-1*job->pg.id, SIGCONT);
                     job->pg.status = BGRUN;
                     if (strstr(job->pg.proc, " &") == NULL) {
                         strcat(job->pg.proc, " &");
                     }
-                    job = addEntry(job->pg, jobs);
                     printf("[%d]+ %s\n", job->nodeID, job->pg.proc);
                 
                     tcsetpgrp(0, getpgid(getpid()));
@@ -323,8 +324,10 @@ void prepareRedirCommand(char** tokens, int* fileErr) {
             dup2(errFile, STDERR_FILENO);
         }
 
-        if (strcmp(*topOfTokens, "&") == 0)
+        if (strcmp(*topOfTokens, "&") == 0) {
             *topOfTokens = NULL;
+            return;
+        }
 
         if (strcmp(*topOfTokens, "|") == 0) {
             *topOfTokens = NULL;
@@ -393,7 +396,6 @@ ListNode* removeEntry(ListNode* list, pid_t pid) {
         temp = temp->next;
     }
 
-    // Check that element exists
     while (temp->pg.id != pid) {
         if (temp->next == NULL) {
             return NULL;
@@ -401,7 +403,6 @@ ListNode* removeEntry(ListNode* list, pid_t pid) {
         temp = temp->next;
     }
 
-    // Element exists
     prev = temp->prev;
     if (prev->nodeID == 0) {
         prev->next = NULL;
@@ -437,18 +438,25 @@ void printList(ListNode* list) {
     }
 }
 
-pid_t findEntry(ListNode* list) {
+pid_t findFGEntry(ListNode* list) {
     ListNode* temp = list->next;
-
     while (temp->next != NULL) {
         temp = temp->next;
     }
-    
     while (temp->pg.status == DONE) {
         temp = temp->prev;
     }
-
     return temp->pg.id;
+}
+ListNode* findBGEntry(ListNode* list) {
+    ListNode* temp = list->next;
+    while (temp->next != NULL)
+        temp = temp->next;
+    
+    while (temp->pg.status == DONE || temp->pg.status == BGRUN)
+        temp = temp->prev;
+ 
+    return temp;
 }
 
 void killChildren(ListNode* list) {
