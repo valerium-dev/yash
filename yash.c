@@ -47,19 +47,12 @@ void killChildren(ListNode* list);
 void cleanMemory(ListNode* list);
 void searchForDone(int pid_t, ListNode* list);
 
-int PID_F;
-int SIG_F;
-JobStatus STAT_F;
-
 int main() {
     int pipefd[2];
     int status, fileErr=0;
     pid_t pid;
     char* read;
     char** command; char** command2;
-
-    PID_F = -1;
-    STAT_F = FG;    
 
     int stdin_cp = dup(STDIN_FILENO);
     int stdout_cp = dup(STDOUT_FILENO);
@@ -74,8 +67,6 @@ int main() {
         signal(SIGTTOU, SIG_IGN);
         signal(SIGCHLD, &signalHandler);
     
-        searchForDone(PID_F, jobs);
-
         read = readline("# ");
         if (read == NULL) {
             printf("\nExiting yash...\n");
@@ -111,7 +102,13 @@ int main() {
                         printf("%s\n", job->pg.proc);
                         tcsetpgrp(0, job->pg.id);
                         waitpid(-1 * job->pg.id, &status, WUNTRACED);
-
+                        
+                        if (WIFSTOPPED(status)) {
+                            if (WSTOPSIG(status) == SIGTSTP) {
+                                job->pg.status = BGSTOP;
+                                addEntry(job->pg, jobs);
+                            } 
+                        }
                     } else if (job->pg.status == BGRUN) {
                         job->pg.status = FG;
                         char* tmp = strstr(job->pg.proc, " &");
@@ -121,16 +118,15 @@ int main() {
                         tcsetpgrp(0, job->pg.id);
                         waitpid(-1 * job->pg.id, &status, WUNTRACED);
 
+                        if (WIFSTOPPED(status)) {
+                            if(WSTOPSIG(status) == SIGTSTP) {
+                                job->pg.status = BGSTOP;
+                                addEntry(job->pg, jobs);
+                            } 
+                        }
+
                     } else if (job->pg.status == DONE) {
                         printf("[%d]%c %s\t\t%s\n", job->nodeID, '+', "Done", job->pg.proc);
-                    }
-
-                                 
-                    if (WIFSTOPPED(status)) {
-                        if(WSTOPSIG(status) == SIGTSTP) {
-                            job->pg.status = BGSTOP;
-                            addEntry(job->pg, jobs);
-                        } 
                     }
 
                     tcsetpgrp(0, getpgid(getpid()));
@@ -360,14 +356,6 @@ JobStatus searchAmper(char* command) {
 }
 
 void signalHandler(int signo){
-    int status;
-    PID_F = waitpid(-1, &status, WNOHANG | WUNTRACED);
-    if (signo == SIGCHLD) {
-        if (WIFEXITED(status)) {
-            STAT_F = DONE;
-            kill(-PID_F, SIGINT);
-        }
-    }
 }
 
 void resetStdFD(int in, int out, int err){
@@ -451,22 +439,16 @@ void printList(ListNode* list) {
 
 pid_t findEntry(ListNode* list) {
     ListNode* temp = list->next;
-    pid_t pid = temp->pg.id;
 
-    while (temp != NULL) {
-        if (temp->pg.status == BGSTOP || temp->pg.status == BGRUN) {
-            ListNode* temp2 = temp->next;
-            if (temp2 != NULL) {
-                if (temp2->pg.status == DONE) {
-                    pid = temp->pg.id;
-                } 
-            }
-        }
-        
+    while (temp->next != NULL) {
         temp = temp->next;
     }
+    
+    while (temp->pg.status == DONE) {
+        temp = temp->prev;
+    }
 
-    return pid;
+    return temp->pg.id;
 }
 
 void killChildren(ListNode* list) {
@@ -499,5 +481,7 @@ void searchForDone(int pid, ListNode* list) {
                 removeEntry(list, temp->pg.id);
             }
         }
+        temp = temp->next;
     }
 }
+
