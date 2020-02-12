@@ -451,6 +451,9 @@ ListNode* removeEntry(ListNode* list, pid_t pid) {
     prev = temp->prev;
     next = temp->next;
     
+    prev->next = next;
+    next->prev = prev;
+    return temp;
 
 }
 
