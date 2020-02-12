@@ -79,7 +79,6 @@ int main() {
             killChildren(jobs);
             cleanMemory(jobs);
             free(command);
-            free(read);
             exit(0);
         }
 
@@ -112,6 +111,7 @@ int main() {
                             printf("%s\n", job->pg.proc);
                             tcsetpgrp(0, job->pg.id);
                             waitpid(-1 * job->pg.id, &status, WUNTRACED);
+                            waitpid(-1 * job->pg.id, &status, WUNTRACED);
                         
                             if (WIFSTOPPED(status)) {
                                 if (WSTOPSIG(status) == SIGTSTP) {
@@ -125,6 +125,7 @@ int main() {
 
                             printf("%s\n", job->pg.proc);
                             tcsetpgrp(0, job->pg.id);
+                            waitpid(-1 * job->pg.id, &status, WUNTRACED);
                             waitpid(-1 * job->pg.id, &status, WUNTRACED);
 
                             if (WIFSTOPPED(status)) {
@@ -452,7 +453,10 @@ ListNode* removeEntry(ListNode* list, pid_t pid) {
     next = temp->next;
     
     prev->next = next;
-    next->prev = prev;
+    if (next != NULL) {
+        next->prev = prev;
+    }
+
     return temp;
 
 }
@@ -554,7 +558,7 @@ void markDone(int pid, ListNode* list) {
 void purgeDone(ListNode* list) {
     ListNode* temp = list;
 
-    while (temp->next != NULL) {
+    while (temp != NULL) {
         if (temp->pg.status == DONE) {
             removeEntry(list, temp->pg.id);
         }
