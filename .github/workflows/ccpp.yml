@@ -10,6 +10,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: setup
-      run: apt-get install libreadline6 libreadline6-dev
+      run: sudo apt-get install libreadline6 libreadline6-dev
     - name: make
       run: make
